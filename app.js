@@ -20,8 +20,8 @@ const connectDB = async (env) => {
     if (mongoose.connection.readyState === 1) return;
 
     // Use env var or fallback to the hardcoded string from original code (though env var is recommended)
-    const mongoUrl = env?.MONGODB_URI || process.env.MONGODB_URI || "mongodb+srv://akifkarabay_db_user:OSkQckeN3LzJAMWS@cluster0.eue0vpe.mongodb.net/?appName=Cluster0";
-    
+    const mongoUrl = env?.MONGODB_URI || process.env.MONGODB_URI
+
     try {
         await mongoose.connect(mongoUrl);
         console.log("MongoDB veritabanına bağlandı!");
@@ -43,47 +43,55 @@ app.use('*', async (c, next) => {
 
 // --- USER MODEL (SCHEMA) ---
 const UserSchema = new mongoose.Schema({
-  fullName: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  profilePhoto: { type: String },
-  height: { type: Number },
-  weight: { type: Number },
-  bodyFat: { type: Number },
-  activityLevel: { type: Number },
-  goals: [{ type: String }],
-  water: { type: Number, default: 0 },
-  program: { type: Object },
-  workoutLogs: [{
-    date: { type: Date, default: Date.now },
-    day: String,
-    exercise: String,
-    note: String
-  }],
-  meals: [{
-    food_name: String,
-    calories: Number,
-    protein: Number,
-    carbs: Number,
-    fat: Number,
-    sugar: Number,
-    period: String,
-    date: { type: Date, default: Date.now }
-  }],
-  daily_stats: {
-    date: String,
-    steps: Number,
-    calories: Number,
-    last_sync: Date
-  },
-  chatHistory: [{
-    role: { type: String, enum: ['user', 'assistant'] },
-    content: String,
-    timestamp: { type: Date, default: Date.now }
-  }]
+    fullName: { type: String, required: true },
+    email: { type: String, required: true, unique: true },
+    password: { type: String, required: true },
+    profilePhoto: { type: String },
+    height: { type: Number },
+    weight: { type: Number },
+    bodyFat: { type: Number },
+    activityLevel: { type: Number },
+    goals: [{ type: String }],
+    water: { type: Number, default: 0 },
+    program: { type: Object },
+    workoutLogs: [{
+        date: { type: Date, default: Date.now },
+        day: String,
+        exercise: String,
+        note: String
+    }],
+    meals: [{
+        food_name: String,
+        calories: Number,
+        protein: Number,
+        carbs: Number,
+        fat: Number,
+        sugar: Number,
+        period: String,
+        date: { type: Date, default: Date.now }
+    }],
+    daily_stats: {
+        date: String,
+        steps: Number,
+        calories: Number,
+        last_sync: Date
+    },
+    chatHistory: [{
+        role: { type: String, enum: ['user', 'assistant'] },
+        content: String,
+        timestamp: { type: Date, default: Date.now }
+    }]
 });
-
+const ExerciseSchema = new mongoose.Schema({
+    name: { type: String, required: true },
+    description: { type: String },
+    muscleGroup: { type: String },
+    difficulty: { type: String },
+    videoUrl: { type: String },
+    imageUrl: { type: String }
+});
 const User = mongoose.models.User || mongoose.model('User', UserSchema);
+const Exercise = mongoose.models.Exercise || mongoose.model('Exercise', ExerciseSchema);
 
 // --- HELPER CLIENTS ---
 const getR2Client = (c) => {
@@ -110,107 +118,107 @@ const getGroqClient = (c) => {
 
 // Update Meal Period
 app.put('/update-meal-period', async (c) => {
-  try {
-    const { mealId, period, email } = await c.req.json();
-    const user = await User.findOneAndUpdate(
-      { email: email, 'meals._id': mealId },
-      { $set: { 'meals.$.period': period } },
-      { new: true }
-    );
-    if (user) {
-      return c.json({ message: "Öğün güncellendi", success: true });
-    } else {
-      return c.json({ message: "Kullanıcı veya öğün bulunamadı" }, 404);
+    try {
+        const { mealId, period, email } = await c.req.json();
+        const user = await User.findOneAndUpdate(
+            { email: email, 'meals._id': mealId },
+            { $set: { 'meals.$.period': period } },
+            { new: true }
+        );
+        if (user) {
+            return c.json({ message: "Öğün güncellendi", success: true });
+        } else {
+            return c.json({ message: "Kullanıcı veya öğün bulunamadı" }, 404);
+        }
+    } catch (error) {
+        console.error("Öğün güncelleme hatası:", error);
+        return c.json({ message: "Sunucu hatası" }, 500);
     }
-  } catch (error) {
-    console.error("Öğün güncelleme hatası:", error);
-    return c.json({ message: "Sunucu hatası" }, 500);
-  }
 });
 
 // Get Meals
 app.get('/get-meals/:email', async (c) => {
-  try {
-    const email = c.req.param('email');
-    const user = await User.findOne({ email });
-    if (user) {
-      const sortedMeals = [...user.meals].reverse();
-      return c.json({ meals: sortedMeals });
-    } else {
-      return c.json({ message: "Kullanıcı bulunamadı" }, 404);
+    try {
+        const email = c.req.param('email');
+        const user = await User.findOne({ email });
+        if (user) {
+            const sortedMeals = [...user.meals].reverse();
+            return c.json({ meals: sortedMeals });
+        } else {
+            return c.json({ message: "Kullanıcı bulunamadı" }, 404);
+        }
+    } catch (error) {
+        console.error("Geçmiş çekilemedi:", error);
+        return c.json({ message: "Sunucu hatası" }, 500);
     }
-  } catch (error) {
-    console.error("Geçmiş çekilemedi:", error);
-    return c.json({ message: "Sunucu hatası" }, 500);
-  }
 });
 
 // Save Meal
 app.post('/save-meal', async (c) => {
-  try {
-    const { email, mealData } = await c.req.json();
-    const user = await User.findOneAndUpdate(
-      { email: email },
-      {
-        $push: {
-          meals: {
-            ...mealData,
-            date: new Date()
-          }
+    try {
+        const { email, mealData } = await c.req.json();
+        const user = await User.findOneAndUpdate(
+            { email: email },
+            {
+                $push: {
+                    meals: {
+                        ...mealData,
+                        date: new Date()
+                    }
+                }
+            },
+            { new: true }
+        );
+        if (user) {
+            return c.json({ message: "Yemek kaydedildi", success: true });
+        } else {
+            return c.json({ message: "Kullanıcı bulunamadı" }, 404);
         }
-      },
-      { new: true }
-    );
-    if (user) {
-      return c.json({ message: "Yemek kaydedildi", success: true });
-    } else {
-      return c.json({ message: "Kullanıcı bulunamadı" }, 404);
+    } catch (error) {
+        console.error("Yemek kaydetme hatası:", error);
+        return c.json({ message: "Sunucu hatası" }, 500);
     }
-  } catch (error) {
-    console.error("Yemek kaydetme hatası:", error);
-    return c.json({ message: "Sunucu hatası" }, 500);
-  }
 });
 
 // Delete Meal
 app.delete('/delete-meal', async (c) => {
-  try {
-    const { email, mealId } = await c.req.json();
-    const user = await User.findOneAndUpdate(
-      { email: email },
-      { $pull: { meals: { _id: mealId } } },
-      { new: true }
-    );
-    if (user) {
-      return c.json({ message: "Yemek silindi", success: true });
-    } else {
-      return c.json({ message: "Kullanıcı veya yemek bulunamadı" }, 404);
+    try {
+        const { email, mealId } = await c.req.json();
+        const user = await User.findOneAndUpdate(
+            { email: email },
+            { $pull: { meals: { _id: mealId } } },
+            { new: true }
+        );
+        if (user) {
+            return c.json({ message: "Yemek silindi", success: true });
+        } else {
+            return c.json({ message: "Kullanıcı veya yemek bulunamadı" }, 404);
+        }
+    } catch (error) {
+        console.error("Yemek silme hatası:", error);
+        return c.json({ message: "Sunucu hatası" }, 500);
     }
-  } catch (error) {
-    console.error("Yemek silme hatası:", error);
-    return c.json({ message: "Sunucu hatası" }, 500);
-  }
 });
 
 // Analyze Image (Groq Vision)
 app.post('/analyze-image', async (c) => {
-  try {
-    const groq = getGroqClient(c);
-    if (!groq) return c.json({ message: "Yapay zeka özellikleri çalışmayacak (Missing API Key)." }, 500);
+    try {
+        const groq = getGroqClient(c);
+        if (!groq) return c.json({ message: "Yapay zeka özellikleri çalışmayacak (Missing API Key)." }, 500);
 
-    const body = await c.req.parseBody();
-    const imageFile = body['image'];
+        const body = await c.req.parseBody();
+        const imageFile = body['image'];
 
-    if (!imageFile) {
-      return c.json({ message: "Görüntü verisi gelmedi." }, 400);
-    }
+        if (!imageFile) {
+            return c.json({ message: "Görüntü verisi gelmedi." }, 400);
+        }
 
-    const arrayBuffer = await imageFile.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const mimeType = imageFile.type;
-    const base64Image = `data:${mimeType};base64,${buffer.toString('base64')}`;
+        const arrayBuffer = await imageFile.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const mimeType = imageFile.type;
+        const base64Image = `data:${mimeType};base64,${buffer.toString('base64')}`;
 
-    const promptText = `
+        const promptText = `
             ROL: Sen dünyanın en iyi beslenme uzmanı ve diyetisyenisin.
             GÖREV: Sana gönderilen yemek fotoğrafını analiz et.
             
@@ -228,346 +236,356 @@ app.post('/analyze-image', async (c) => {
             Sadece JSON döndür, yorum yapma.
         `;
 
-    const chatCompletion = await groq.chat.completions.create({
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: promptText },
-            { type: "image_url", image_url: { url: base64Image } }
-          ]
+        const chatCompletion = await groq.chat.completions.create({
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        { type: "text", text: promptText },
+                        { type: "image_url", image_url: { url: base64Image } }
+                    ]
+                }
+            ],
+            model: "meta-llama/llama-4-scout-17b-16e-instruct",
+            temperature: 0.5,
+            max_tokens: 1024,
+            top_p: 1,
+            stream: false
+        });
+
+        const aiResponseContent = chatCompletion.choices[0]?.message?.content || "Görüntü analiz edilemedi.";
+        console.log("AI Ham Cevap:", aiResponseContent);
+
+        let jsonResponse;
+        try {
+            const cleanJson = aiResponseContent.replace(/```json/g, "").replace(/```/g, "").trim();
+            jsonResponse = JSON.parse(cleanJson);
+        } catch (e) {
+            console.error("JSON parse error", e);
+            return c.json({ message: "AI cevabı okunamadı", raw: aiResponseContent }, 500);
         }
-      ],
-      model: "llama-3.2-11b-vision-preview",
-      temperature: 0.5,
-      max_tokens: 1024,
-      top_p: 1,
-      stream: false
-    });
 
-    const aiResponseContent = chatCompletion.choices[0]?.message?.content || "Görüntü analiz edilemedi.";
-    console.log("AI Ham Cevap:", aiResponseContent);
+        return c.json({ result: jsonResponse });
 
-    let jsonResponse;
-    try {
-      const cleanJson = aiResponseContent.replace(/```json/g, "").replace(/```/g, "").trim();
-      jsonResponse = JSON.parse(cleanJson);
-    } catch (e) {
-      console.error("JSON parse error", e);
-      return c.json({ message: "AI cevabı okunamadı", raw: aiResponseContent }, 500);
+    } catch (error) {
+        console.error("Görüntü Analiz Hatası:", error);
+        return c.json({ message: "Görüntü analiz edilirken hata oluştu.", error: error.message }, 500);
     }
-
-    return c.json({ result: jsonResponse });
-
-  } catch (error) {
-    console.error("Görüntü Analiz Hatası:", error);
-    return c.json({ message: "Görüntü analiz edilirken hata oluştu.", error: error.message }, 500);
-  }
 });
 
 // Save Log
 app.post('/save-log', async (c) => {
-  try {
-    const { email, day, exercise, note } = await c.req.json();
-    const updatedUser = await User.findOneAndUpdate(
-      { email: email },
-      {
-        $push: {
-          workoutLogs: {
-            day: day,
-            exercise: exercise,
-            note: note,
-            date: new Date()
-          }
-        }
-      },
-      { new: true }
-    );
-    if (!updatedUser) return c.json({ message: "Kullanıcı bulunamadı" }, 404);
-    return c.json({ message: "Kaydedildi", logs: updatedUser.workoutLogs });
-  } catch (error) {
-    console.error("Log hatası:", error);
-    return c.json({ message: "Sunucu hatası" }, 500);
-  }
+    try {
+        const { email, day, exercise, note } = await c.req.json();
+        const updatedUser = await User.findOneAndUpdate(
+            { email: email },
+            {
+                $push: {
+                    workoutLogs: {
+                        day: day,
+                        exercise: exercise,
+                        note: note,
+                        date: new Date()
+                    }
+                }
+            },
+            { new: true }
+        );
+        if (!updatedUser) return c.json({ message: "Kullanıcı bulunamadı" }, 404);
+        return c.json({ message: "Kaydedildi", logs: updatedUser.workoutLogs });
+    } catch (error) {
+        console.error("Log hatası:", error);
+        return c.json({ message: "Sunucu hatası" }, 500);
+    }
 });
 
 // Update Water
 app.post('/update-water', async (c) => {
-  try {
-    const { email, waterAmount } = await c.req.json();
-    const updatedUser = await User.findOneAndUpdate(
-      { email: email },
-      { water: waterAmount },
-      { new: true }
-    );
-    return c.json({ message: "Su güncellendi", water: updatedUser.water });
-  } catch (error) {
-    return c.json({ message: "Hata oluştu" }, 500);
-  }
+    try {
+        const { email, waterAmount } = await c.req.json();
+        const updatedUser = await User.findOneAndUpdate(
+            { email: email },
+            { water: waterAmount },
+            { new: true }
+        );
+        return c.json({ message: "Su güncellendi", water: updatedUser.water });
+    } catch (error) {
+        return c.json({ message: "Hata oluştu" }, 500);
+    }
 });
 
 // Get Water
 app.get('/get-water/:email', async (c) => {
-  try {
-    const email = c.req.param('email');
-    const user = await User.findOne({ email });
-    if (user) {
-      return c.json({ water: user.water });
-    } else {
-      return c.json({ water: 0 });
+    try {
+        const email = c.req.param('email');
+        const user = await User.findOne({ email });
+        if (user) {
+            return c.json({ water: user.water });
+        } else {
+            return c.json({ water: 0 });
+        }
+    } catch (error) {
+        return c.json({ message: "Hata oluştu" }, 500);
     }
-  } catch (error) {
-    return c.json({ message: "Hata oluştu" }, 500);
-  }
 });
 
 // Google Fit Integration
 async function getGoogleFitData(c) {
-  try {
-    const GOOGLE_CLIENT_ID = getEnv(c, 'GOOGLE_CLIENT_ID');
-    const GOOGLE_CLIENT_SECRET = getEnv(c, 'GOOGLE_CLIENT_SECRET');
-    const GOOGLE_REFRESH_TOKEN = getEnv(c, 'GOOGLE_REFRESH_TOKEN');
+    try {
+        const GOOGLE_CLIENT_ID = getEnv(c, 'GOOGLE_CLIENT_ID');
+        const GOOGLE_CLIENT_SECRET = getEnv(c, 'GOOGLE_CLIENT_SECRET');
+        const GOOGLE_REFRESH_TOKEN = getEnv(c, 'GOOGLE_REFRESH_TOKEN');
 
-    if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REFRESH_TOKEN) {
-        console.error("Google env vars missing");
+        if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REFRESH_TOKEN) {
+            console.error("Google env vars missing");
+            return null;
+        }
+
+        const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+                client_id: GOOGLE_CLIENT_ID,
+                client_secret: GOOGLE_CLIENT_SECRET,
+                refresh_token: GOOGLE_REFRESH_TOKEN,
+                grant_type: "refresh_token",
+            }),
+        });
+
+        const tokenData = await tokenResponse.json();
+        if (!tokenResponse.ok) return null;
+
+        const accessToken = tokenData.access_token;
+        const now = new Date();
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const startMs = startOfDay.getTime();
+        const endMs = now.getTime();
+
+        const datasetResponse = await fetch(
+            "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate",
+            {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    aggregateBy: [
+                        { dataTypeName: "com.google.step_count.delta" },
+                        { dataTypeName: "com.google.calories.expended" },
+                    ],
+                    bucketByTime: { durationMillis: 86400000 },
+                    startTimeMillis: startMs,
+                    endTimeMillis: endMs,
+                }),
+            }
+        );
+
+        const fitData = await datasetResponse.json();
+        if (!datasetResponse.ok) return null;
+
+        let steps = 0;
+        let calories = 0;
+
+        if (fitData.bucket && fitData.bucket.length > 0) {
+            fitData.bucket.forEach((bucket) => {
+                if (bucket.dataset) {
+                    bucket.dataset.forEach((dataset) => {
+                        if (dataset.point) {
+                            dataset.point.forEach((point) => {
+                                if (point.value) {
+                                    point.value.forEach((val) => {
+                                        if (val.intVal) steps += val.intVal;
+                                        if (val.fpVal) calories += val.fpVal;
+                                    });
+                                }
+                            });
+                        }
+                    });
+                }
+            });
+        }
+
+        return {
+            date: now.toISOString().split("T")[0],
+            steps: steps,
+            calories: Math.round(calories),
+        };
+    } catch (error) {
+        console.error("Google Fit Entegrasyon Hatası:", error);
         return null;
     }
-
-    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_id: GOOGLE_CLIENT_ID,
-        client_secret: GOOGLE_CLIENT_SECRET,
-        refresh_token: GOOGLE_REFRESH_TOKEN,
-        grant_type: "refresh_token",
-      }),
-    });
-
-    const tokenData = await tokenResponse.json();
-    if (!tokenResponse.ok) return null;
-
-    const accessToken = tokenData.access_token;
-    const now = new Date();
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startMs = startOfDay.getTime();
-    const endMs = now.getTime();
-
-    const datasetResponse = await fetch(
-      "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          aggregateBy: [
-            { dataTypeName: "com.google.step_count.delta" },
-            { dataTypeName: "com.google.calories.expended" },
-          ],
-          bucketByTime: { durationMillis: 86400000 },
-          startTimeMillis: startMs,
-          endTimeMillis: endMs,
-        }),
-      }
-    );
-
-    const fitData = await datasetResponse.json();
-    if (!datasetResponse.ok) return null;
-
-    let steps = 0;
-    let calories = 0;
-
-    if (fitData.bucket && fitData.bucket.length > 0) {
-      fitData.bucket.forEach((bucket) => {
-        if (bucket.dataset) {
-          bucket.dataset.forEach((dataset) => {
-            if (dataset.point) {
-              dataset.point.forEach((point) => {
-                if (point.value) {
-                  point.value.forEach((val) => {
-                    if (val.intVal) steps += val.intVal;
-                    if (val.fpVal) calories += val.fpVal;
-                  });
-                }
-              });
-            }
-          });
-        }
-      });
-    }
-
-    return {
-      date: now.toISOString().split("T")[0],
-      steps: steps,
-      calories: Math.round(calories),
-    };
-  } catch (error) {
-    console.error("Google Fit Entegrasyon Hatası:", error);
-    return null;
-  }
 }
 
 app.post("/sync-fitness-data", async (c) => {
-  try {
-    const { email } = await c.req.json();
-    const fitnessData = await getGoogleFitData(c);
-
-    if (!fitnessData) {
-      return c.json({ message: "Google Fit verisi alınamadı." }, 500);
-    }
-
-    const user = await User.findOneAndUpdate(
-      { email: email },
-      {
-        $set: {
-          daily_stats: {
-            ...fitnessData,
-            last_sync: new Date()
-          }
+    try {
+        let email;
+        try {
+            const body = await c.req.json();
+            email = body.email;
+        } catch (e) {
+            return c.json({ message: "Geçersiz istek gövdesi (JSON bekleniyor)." }, 400);
         }
-      },
-      { new: true }
-    );
 
-    if (!user) {
-      return c.json({ message: "Kullanıcı bulunamadı." }, 404);
+        if (!email) {
+            return c.json({ message: "Email adresi gerekli." }, 400);
+        }
+        const fitnessData = await getGoogleFitData(c);
+
+        if (!fitnessData) {
+            return c.json({ message: "Google Fit verisi alınamadı." }, 500);
+        }
+
+        const user = await User.findOneAndUpdate(
+            { email: email },
+            {
+                $set: {
+                    daily_stats: {
+                        ...fitnessData,
+                        last_sync: new Date()
+                    }
+                }
+            },
+            { new: true }
+        );
+
+        if (!user) {
+            return c.json({ message: "Kullanıcı bulunamadı." }, 404);
+        }
+
+        return c.json({ status: "success", data: fitnessData, user });
+
+    } catch (error) {
+        console.error("Sync hatası:", error);
+        return c.json({ message: "Sunucu hatası." }, 500);
     }
-
-    return c.json({ status: "success", data: fitnessData, user });
-
-  } catch (error) {
-    console.error("Sync hatası:", error);
-    return c.json({ message: "Sunucu hatası." }, 500);
-  }
 });
 
 // Register
 app.post('/register', async (c) => {
-  try {
-    const { fullName, email, password } = await c.req.json();
-    const existingUser = await User.findOne({ email });
-    if (existingUser) return c.json({ message: "Bu email zaten kayıtlı." }, 400);
+    try {
+        const { fullName, email, password } = await c.req.json();
+        const existingUser = await User.findOne({ email });
+        if (existingUser) return c.json({ message: "Bu email zaten kayıtlı." }, 400);
 
-    const newUser = new User({ fullName, email, password });
-    await newUser.save();
+        const newUser = new User({ fullName, email, password });
+        await newUser.save();
 
-    return c.json({ message: "Kayıt başarılı!" }, 201);
-  } catch (error) {
-    return c.json({ message: "Sunucu hatası oluştu." }, 500);
-  }
+        return c.json({ message: "Kayıt başarılı!" }, 201);
+    } catch (error) {
+        return c.json({ message: "Sunucu hatası oluştu." }, 500);
+    }
 });
 
 // Login
 app.post('/login', async (c) => {
-  try {
-    const { email, password } = await c.req.json();
-    const user = await User.findOne({ email });
-    if (!user) return c.json({ message: "Kullanıcı bulunamadı." }, 404);
-    if (user.password !== password) return c.json({ message: "Şifre hatalı!" }, 401);
+    try {
+        const { email, password } = await c.req.json();
+        const user = await User.findOne({ email });
+        if (!user) return c.json({ message: "Kullanıcı bulunamadı." }, 404);
+        if (user.password !== password) return c.json({ message: "Şifre hatalı!" }, 401);
 
-    const userObj = user.toObject();
-    delete userObj.password;
-    const goals = user.goals || [];
-    userObj.filled = !!(user.height && user.weight && goals.length > 0);
+        const userObj = user.toObject();
+        delete userObj.password;
+        const goals = user.goals || [];
+        userObj.filled = !!(user.height && user.weight && goals.length > 0);
 
-    return c.json({
-      message: "Giriş başarılı!",
-      user: userObj
-    });
-  } catch (error) {
-    return c.json({ message: "Sunucu hatası.", error: error.message }, 500);
-  }
+        return c.json({
+            message: "Giriş başarılı!",
+            user: userObj
+        });
+    } catch (error) {
+        return c.json({ message: "Sunucu hatası.", error: error.message }, 500);
+    }
 });
 
 // Save User Info
 app.post('/save-user-info', async (c) => {
-  try {
-    const { email, height, weight, bodyFat, activityLevel, goals } = await c.req.json();
-    const user = await User.findOneAndUpdate(
-      { email: email },
-      { height, weight, bodyFat, activityLevel, goals },
-      { new: true }
-    );
-    if (!user) return c.json({ message: "Kullanıcı bulunamadı." }, 404);
-    return c.json({ message: "Bilgiler kaydedildi.", user });
-  } catch (error) {
-    return c.json({ message: "Sunucu hatası." }, 500);
-  }
+    try {
+        const { email, height, weight, bodyFat, activityLevel, goals } = await c.req.json();
+        const user = await User.findOneAndUpdate(
+            { email: email },
+            { height, weight, bodyFat, activityLevel, goals },
+            { new: true }
+        );
+        if (!user) return c.json({ message: "Kullanıcı bulunamadı." }, 404);
+        return c.json({ message: "Bilgiler kaydedildi.", user });
+    } catch (error) {
+        return c.json({ message: "Sunucu hatası." }, 500);
+    }
 });
 
 // Async R2 Upload helper
 async function uploadToR2(c, buffer, key, contentType) {
-  const r2 = getR2Client(c);
-  const R2_BUCKET_NAME = getEnv(c, 'R2_BUCKET_NAME');
-  const R2_PUBLIC_URL = getEnv(c, 'R2_PUBLIC_URL');
+    const r2 = getR2Client(c);
+    const R2_BUCKET_NAME = getEnv(c, 'R2_BUCKET_NAME');
+    const R2_PUBLIC_URL = getEnv(c, 'R2_PUBLIC_URL');
 
-  if (!r2 || !R2_BUCKET_NAME) {
-    throw new Error('R2 configuration missing.');
-  }
+    if (!r2 || !R2_BUCKET_NAME) {
+        throw new Error('R2 configuration missing.');
+    }
 
-  const command = new PutObjectCommand({
-    Bucket: R2_BUCKET_NAME,
-    Key: key,
-    Body: buffer,
-    ContentType: contentType,
-  });
+    const command = new PutObjectCommand({
+        Bucket: R2_BUCKET_NAME,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+    });
 
-  await r2.send(command);
-  
-  const baseUrl = R2_PUBLIC_URL ? R2_PUBLIC_URL.replace(/\/$/, '') : '';
-  const cleanKey = key.replace(/^\//, '');
-  return `${baseUrl}/${cleanKey}`;
+    await r2.send(command);
+
+    const baseUrl = R2_PUBLIC_URL ? R2_PUBLIC_URL.replace(/\/$/, '') : '';
+    const cleanKey = key.replace(/^\//, '');
+    return `${baseUrl}/${cleanKey}`;
 }
 
 // Update Profile (Avatar) - WITH R2 STORAGE
 app.post('/update-profile', async (c) => {
-  try {
-    const body = await c.req.parseBody();
-    const email = body['email'];
-    const fullName = body['fullName'];
-    const profilePhoto = body['profilePhoto']; // Standard File object in Hono
+    try {
+        const body = await c.req.parseBody();
+        const email = body['email'];
+        const fullName = body['fullName'];
+        const profilePhoto = body['profilePhoto']; // Standard File object in Hono
 
-    let updateData = { fullName };
+        let updateData = { fullName };
 
-    if (profilePhoto && typeof profilePhoto === 'object') {
-      try {
-        const arrayBuffer = await profilePhoto.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-        const mimeType = profilePhoto.type;
-        const ext = mimeType.split('/')[1] || 'jpg';
-        const fileName = `avatars/avatar-${Date.now()}-${Math.floor(Math.random() * 1000)}.${ext}`;
+        if (profilePhoto && typeof profilePhoto === 'object') {
+            try {
+                const arrayBuffer = await profilePhoto.arrayBuffer();
+                const buffer = Buffer.from(arrayBuffer);
+                const mimeType = profilePhoto.type;
+                const ext = mimeType.split('/')[1] || 'jpg';
+                const fileName = `avatars/avatar-${Date.now()}-${Math.floor(Math.random() * 1000)}.${ext}`;
 
-        const publicUrl = await uploadToR2(c, buffer, fileName, mimeType);
-        updateData.profilePhoto = publicUrl;
-      } catch (uploadError) {
-        console.error("R2 Upload failed:", uploadError);
-        return c.json({ message: "Dosya yüklenemedi, R2 ayarlarını kontrol et.", error: uploadError.message }, 500);
-      }
+                const publicUrl = await uploadToR2(c, buffer, fileName, mimeType);
+                updateData.profilePhoto = publicUrl;
+            } catch (uploadError) {
+                console.error("R2 Upload failed:", uploadError);
+                return c.json({ message: "Dosya yüklenemedi, R2 ayarlarını kontrol et.", error: uploadError.message }, 500);
+            }
+        }
+
+        const user = await User.findOneAndUpdate(
+            { email: email },
+            { $set: updateData },
+            { new: true }
+        );
+
+        if (!user) return c.json({ message: "Kullanıcı bulunamadı." }, 404);
+        return c.json({ message: "Profil güncellendi.", user });
+
+    } catch (error) {
+        console.error("Profile update error", error)
+        return c.json({ message: "Sunucu hatası.", error: error.message }, 500);
     }
-
-    const user = await User.findOneAndUpdate(
-      { email: email },
-      { $set: updateData },
-      { new: true }
-    );
-
-    if (!user) return c.json({ message: "Kullanıcı bulunamadı." }, 404);
-    return c.json({ message: "Profil güncellendi.", user });
-
-  } catch (error) {
-    console.error("Profile update error", error)
-    return c.json({ message: "Sunucu hatası.", error: error.message }, 500);
-  }
 });
 
 // Generate Program
 app.post('/generate-program', async (c) => {
-  try {
-    const { email, height, weight, goals, activityLevel } = await c.req.json();
+    try {
+        const { email, height, weight, goals, activityLevel } = await c.req.json();
 
-    const prompt = `
+        const prompt = `
             ANSWER MUST BE IN ENGLİSH LANGUAGE
             ROLE: You are an elite Military Fitness Instructor. You do NOT suggest. You COMMAND.
             TASK: Generate a strict, no-nonsense workout and nutrition plan in valid JSON format.
@@ -593,62 +611,128 @@ app.post('/generate-program', async (c) => {
             }
         `;
 
-    const groq = getGroqClient(c);
-    if (!groq) {
-      return c.json({ result: "Demo Mode (API Key Missing)" });
+        const groq = getGroqClient(c);
+        if (!groq) {
+            return c.json({ result: "Demo Mode (API Key Missing)" });
+        }
+
+        const chatCompletion = await groq.chat.completions.create({
+            messages: [{ role: "system", content: prompt }],
+            model: "llama-3.1-8b-instant",
+            temperature: 0.3,
+            max_tokens: 1024
+        });
+
+        let jsonResponse;
+        const aiResponseContent = chatCompletion.choices[0]?.message?.content || "{}";
+        try {
+            const cleanJson = aiResponseContent.replace(/```json/g, "").replace(/```/g, "").trim();
+            jsonResponse = JSON.parse(cleanJson);
+        } catch (e) {
+            jsonResponse = {};
+        }
+
+        const updatedUser = await User.findOneAndUpdate(
+            { email },
+            { program: jsonResponse },
+            { new: true }
+        );
+        return c.json({ result: jsonResponse, user: updatedUser });
+
+    } catch (error) {
+        return c.json({ message: "Program oluşturulamadı" }, 500);
     }
-
-    const chatCompletion = await groq.chat.completions.create({
-      messages: [{ role: "system", content: prompt }],
-      model: "llama-3.1-8b-instant",
-      temperature: 0.3,
-      max_tokens: 1024
-    });
-
-    let jsonResponse;
-    const aiResponseContent = chatCompletion.choices[0]?.message?.content || "{}";
-    try {
-      const cleanJson = aiResponseContent.replace(/```json/g, "").replace(/```/g, "").trim();
-      jsonResponse = JSON.parse(cleanJson);
-    } catch (e) {
-      jsonResponse = {};
-    }
-
-    const updatedUser = await User.findOneAndUpdate(
-      { email },
-      { program: jsonResponse },
-      { new: true }
-    );
-    return c.json({ result: jsonResponse, user: updatedUser });
-
-  } catch (error) {
-    return c.json({ message: "Program oluşturulamadı" }, 500);
-  }
 });
 
 app.get('/get-program/:email', async (c) => {
-  const email = c.req.param('email');
-  const user = await User.findOne({ email });
-  if (user && user.program) {
-    return c.json(user.program);
-  } else {
-    return c.json({ message: "Program bulunamadı." }, 404);
-  }
+    const email = c.req.param('email');
+    const user = await User.findOne({ email });
+    if (user && user.program) {
+        return c.json(user.program);
+    } else {
+        return c.json({ message: "Program bulunamadı." }, 404);
+    }
+});
+
+// Add Exercise to Program
+app.post('/program/add-exercise', async (c) => {
+    try {
+        const { email, day, exercises } = await c.req.json(); // exercises should be an array
+        const user = await User.findOne({ email });
+
+        if (!user || !user.program || !user.program.schedule) {
+            return c.json({ message: "Kullanıcı veya program bulunamadı." }, 404);
+        }
+
+        // Find the specific day in the schedule
+        const daySchedule = user.program.schedule.find(s => s.day === day);
+        if (!daySchedule) {
+            return c.json({ message: "Programda bu gün bulunamadı." }, 404);
+        }
+
+        // Ensure exercises array exists
+        if (!daySchedule.exercises) daySchedule.exercises = [];
+
+        // Normalize input to array
+        const exercisesToAdd = Array.isArray(exercises) ? exercises : [exercises];
+        const enrichedExercises = [];
+
+        for (const ex of exercisesToAdd) {
+            // Try to find exercise in DB by name or ID
+            let dbExercise = null;
+            if (ex._id) {
+                dbExercise = await Exercise.findById(ex._id);
+            } else if (ex.name) {
+                dbExercise = await Exercise.findOne({ name: ex.name });
+            }
+
+            if (dbExercise) {
+                // Merge DB details with user input (user input overrides conflicting fields like sets/reps if needed)
+                enrichedExercises.push({
+                    name: dbExercise.name,
+                    muscleGroup: dbExercise.muscleGroup,
+                    videoUrl: dbExercise.videoUrl,
+                    imageUrl: dbExercise.imageUrl,
+                    difficulty: dbExercise.difficulty,
+                    description: dbExercise.description,
+                    sets: ex.sets || "4", // Default or user provided
+                    reps: ex.reps || "10", // Default or user provided
+                    note: ex.note
+                });
+            } else {
+                // If not found in DB, just add what the user sent
+                enrichedExercises.push(ex);
+            }
+        }
+
+        // Add the enriched exercises
+        daySchedule.exercises.push(...enrichedExercises);
+
+        // Mark 'program' as modified since it's a Mixed type
+        user.markModified('program');
+        await user.save();
+
+        return c.json({ message: "Egzersizler programa eklendi.", program: user.program });
+
+    } catch (error) {
+        console.error("Program update error:", error);
+        return c.json({ message: "Egzersiz eklenirken hata oluştu.", error: error.message }, 500);
+    }
 });
 
 // Chat AI & TTS
 app.post('/chat-ai', async (c) => {
-  try {
-    const { message, email } = await c.req.json();
-    let history = [];
-    if (email) {
-      const user = await User.findOne({ email });
-      if (user && user.chatHistory) {
-        history = user.chatHistory.slice(-10).map(h => ({ role: h.role, content: h.content }));
-      }
-    }
+    try {
+        const { message, email } = await c.req.json();
+        let history = [];
+        if (email) {
+            const user = await User.findOne({ email });
+            if (user && user.chatHistory) {
+                history = user.chatHistory.slice(-10).map(h => ({ role: h.role, content: h.content }));
+            }
+        }
 
-    const systemPrompt = `You are "Coach", an energetic and friendly sports trainer.
+        const systemPrompt = `You are "Coach", an energetic and friendly sports trainer.
     
     Your Task:
     Answer the user's questions about fitness, nutrition, and health.
@@ -664,72 +748,169 @@ app.post('/chat-ai', async (c) => {
     8. IMPORTANT: ALWAYS ANSWER IN ENGLISH.
     `;
 
-    const groq = getGroqClient(c);
-    if (!groq) return c.json({ reply: "Service Unavailable" });
+        const groq = getGroqClient(c);
+        if (!groq) return c.json({ reply: "Service Unavailable" });
 
-    const chatCompletion = await groq.chat.completions.create({
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...history,
-        { role: "user", content: message }
-      ],
-      model: "llama-3.1-8b-instant",
-      temperature: 0.7,
-      max_tokens: 150,
-    });
+        const chatCompletion = await groq.chat.completions.create({
+            messages: [
+                { role: "system", content: systemPrompt },
+                ...history,
+                { role: "user", content: message }
+            ],
+            model: "llama-3.1-8b-instant",
+            temperature: 0.7,
+            max_tokens: 150,
+        });
 
-    const reply = chatCompletion.choices[0]?.message?.content || "Anlaşılamadı.";
+        const reply = chatCompletion.choices[0]?.message?.content || "Anlaşılamadı.";
 
-    if (email) {
-      await User.findOneAndUpdate(
-        { email },
-        {
-          $push: {
-            chatHistory: {
-              $each: [
-                { role: 'user', content: message },
-                { role: 'assistant', content: reply }
-              ]
-            }
-          }
+        if (email) {
+            await User.findOneAndUpdate(
+                { email },
+                {
+                    $push: {
+                        chatHistory: {
+                            $each: [
+                                { role: 'user', content: message },
+                                { role: 'assistant', content: reply }
+                            ]
+                        }
+                    }
+                }
+            );
         }
-      );
-    }
 
-    // TTS Logic - Using Cloudflare R2
-    let audioUrl = null;
+        // TTS Logic - Using Cloudflare R2
+        let audioUrl = null;
+        try {
+            const R2_BUCKET_NAME = getEnv(c, 'R2_BUCKET_NAME');
+            if (!R2_BUCKET_NAME) {
+                throw new Error("R2 not configured");
+            }
+
+            const audioResponse = await groq.audio.speech.create({
+                model: "canopylabs/orpheus-v1-english",
+                voice: "daniel",
+                input: reply,
+                response_format: "wav"
+            });
+
+            const buffer = Buffer.from(await audioResponse.arrayBuffer());
+            const fileName = `audio/speech-${Date.now()}-${Math.floor(Math.random() * 1000)}.wav`;
+
+            audioUrl = await uploadToR2(c, buffer, fileName, 'audio/wav');
+
+        } catch (e) {
+            console.warn("TTS or R2 failed:", e.message);
+            // Fallback: don't return audio if validation fails
+        }
+
+        return c.json({
+            reply: reply,
+            audioUrl: audioUrl
+        });
+
+    } catch (error) {
+        console.error("Chat Error:", error);
+        return c.json({ reply: "Hata oluştu." }, 500);
+    }
+});
+
+// --- EXERCISE DATABASE ENDPOINTS ---
+
+// Seed Exercises
+app.post('/exercises/seed', async (c) => {
     try {
-      const R2_BUCKET_NAME = getEnv(c, 'R2_BUCKET_NAME');
-      if (!R2_BUCKET_NAME) {
-        throw new Error("R2 not configured");
-      }
+        const initialExercises = [
+            {
+                name: "Bench Press",
+                description: "A compound exercise that targets the chest, shoulders, and triceps.",
+                muscleGroup: "Chest",
+                difficulty: "Intermediate",
+                videoUrl: "https://www.youtube.com/watch?v=rT7DgCr-3pg",
+                imageUrl: "https://example.com/bench-press.jpg"
+            },
+            {
+                name: "Squat",
+                description: "A compound exercise that targets the quadriceps, hamstrings, and glutes.",
+                muscleGroup: "Legs",
+                difficulty: "Intermediate",
+                videoUrl: "https://www.youtube.com/watch?v=UltWZb7R46c",
+                imageUrl: "https://example.com/squat.jpg"
+            },
+            {
+                name: "Deadlift",
+                description: "A compound exercise that targets the entire posterior chain.",
+                muscleGroup: "Back",
+                difficulty: "Advanced",
+                videoUrl: "https://www.youtube.com/watch?v=op9kVnSso6Q",
+                imageUrl: "https://example.com/deadlift.jpg"
+            },
+            {
+                name: "Pull-Up",
+                description: "An upper-body compound exercise.",
+                muscleGroup: "Back",
+                difficulty: "Intermediate",
+                videoUrl: "https://www.youtube.com/watch?v=eGo4IYlbE5g",
+                imageUrl: "https://example.com/pullup.jpg"
+            },
+            {
+                name: "Dumbbell Shoulder Press",
+                description: "An exercise for shoulder strength and stability.",
+                muscleGroup: "Shoulders",
+                difficulty: "Beginner",
+                videoUrl: "https://www.youtube.com/watch?v=qEwKCR5JCog",
+                imageUrl: "https://example.com/shoulder-press.jpg"
+            }
+        ];
 
-      const audioResponse = await groq.audio.speech.create({
-        model: "canopylabs/orpheus-v1-english",
-        voice: "daniel",
-        input: reply,
-        response_format: "wav"
-      });
+        let addedCount = 0;
+        for (const ex of initialExercises) {
+            const exists = await Exercise.findOne({ name: ex.name });
+            if (!exists) {
+                await new Exercise(ex).save();
+                addedCount++;
+            }
+        }
 
-      const buffer = Buffer.from(await audioResponse.arrayBuffer());
-      const fileName = `audio/speech-${Date.now()}-${Math.floor(Math.random() * 1000)}.wav`;
-
-      audioUrl = await uploadToR2(c, buffer, fileName, 'audio/wav');
-
-    } catch (e) {
-      console.warn("TTS or R2 failed:", e.message);
-      // Fallback: don't return audio if validation fails
+        return c.json({ message: `${addedCount} exercises added to the database.`, success: true });
+    } catch (error) {
+        return c.json({ message: "Seed failed", error: error.message }, 500);
     }
+});
 
-    return c.json({
-      reply: reply,
-      audioUrl: audioUrl
-    });
+// Get All Exercises
+app.get('/exercises', async (c) => {
+    try {
+        const exercises = await Exercise.find();
+        return c.json(exercises);
+    } catch (error) {
+        return c.json({ message: "Failed to fetch exercises", error: error.message }, 500);
+    }
+});
 
-  } catch (error) {
-    console.error("Chat Error:", error);
-    return c.json({ reply: "Hata oluştu." }, 500);
-  }
+// Create Exercise
+app.post('/exercises', async (c) => {
+    try {
+        const body = await c.req.json();
+        const newExercise = new Exercise(body);
+        await newExercise.save();
+        return c.json(newExercise, 201);
+    } catch (error) {
+        return c.json({ message: "Failed to create exercise", error: error.message }, 500);
+    }
+});
+
+// Get Single Exercise
+app.get('/exercises/:id', async (c) => {
+    try {
+        const id = c.req.param('id');
+        const exercise = await Exercise.findById(id);
+        if (!exercise) return c.json({ message: "Exercise not found" }, 404);
+        return c.json(exercise);
+    } catch (error) {
+        return c.json({ message: "Error fetching exercise", error: error.message }, 500);
+    }
 });
 
 export default app
