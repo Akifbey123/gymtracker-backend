@@ -4,6 +4,7 @@ import mongoose from 'mongoose'
 import Groq from 'groq-sdk'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { v4 as uuidv4 } from 'uuid'
+import { env } from 'hono/adapter'
 
 const app = new Hono()
 
@@ -53,6 +54,10 @@ const UserSchema = new mongoose.Schema({
     activityLevel: { type: Number },
     goals: [{ type: String }],
     water: { type: Number, default: 0 },
+    waterLogs: [{
+        date: { type: String },
+        amount: { type: Number, default: 0 }
+    }],
     program: { type: Object },
     workoutLogs: [{
         date: { type: Date, default: Date.now },
@@ -303,13 +308,24 @@ app.post('/save-log', async (c) => {
 app.post('/update-water', async (c) => {
     try {
         const { email, waterAmount } = await c.req.json();
-        const updatedUser = await User.findOneAndUpdate(
-            { email: email },
-            { water: waterAmount },
-            { new: true }
-        );
-        return c.json({ message: "Su güncellendi", water: updatedUser.water });
+        const today = new Date().toISOString().split('T')[0]; // "YYYY-MM-DD"
+
+        const user = await User.findOne({ email });
+        if (!user) return c.json({ message: "Kullanıcı bulunamadı" }, 404);
+
+        // Update today's water (also keep the legacy field in sync)
+        const existingLog = user.waterLogs.find(log => log.date === today);
+        if (existingLog) {
+            existingLog.amount = waterAmount;
+        } else {
+            user.waterLogs.push({ date: today, amount: waterAmount });
+        }
+        user.water = waterAmount; // keep legacy field in sync
+        await user.save();
+
+        return c.json({ message: "Su güncellendi", water: waterAmount, date: today });
     } catch (error) {
+        console.error("Water update error:", error);
         return c.json({ message: "Hata oluştu" }, 500);
     }
 });
@@ -319,11 +335,15 @@ app.get('/get-water/:email', async (c) => {
     try {
         const email = c.req.param('email');
         const user = await User.findOne({ email });
-        if (user) {
-            return c.json({ water: user.water });
-        } else {
-            return c.json({ water: 0 });
-        }
+        if (!user) return c.json({ water: 0, history: [] });
+
+        const today = new Date().toISOString().split('T')[0];
+        const todayLog = user.waterLogs.find(log => log.date === today);
+
+        return c.json({
+            water: todayLog ? todayLog.amount : 0,
+            history: user.waterLogs.slice(-30).reverse() // last 30 days
+        });
     } catch (error) {
         return c.json({ message: "Hata oluştu" }, 500);
     }
@@ -352,7 +372,13 @@ async function getGoogleFitData(c) {
             }),
         });
 
+        console.log("CLIENT ID: ", GOOGLE_CLIENT_ID);
+        console.log("CLIENT SECRET: ", GOOGLE_CLIENT_SECRET);
+        console.log("REFRESH TOKEN: ", GOOGLE_REFRESH_TOKEN);
+
         const tokenData = await tokenResponse.json();
+        console.log(tokenResponse)
+        console.log(tokenData);
         if (!tokenResponse.ok) return null;
 
         const accessToken = tokenData.access_token;
@@ -380,8 +406,9 @@ async function getGoogleFitData(c) {
                 }),
             }
         );
-
+        console.log(datasetResponse);
         const fitData = await datasetResponse.json();
+        console.log(fitData);
         if (!datasetResponse.ok) return null;
 
         let steps = 0;
