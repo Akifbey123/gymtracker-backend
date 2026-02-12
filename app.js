@@ -59,12 +59,6 @@ const UserSchema = new mongoose.Schema({
         amount: { type: Number, default: 0 }
     }],
     program: { type: Object },
-    workoutLogs: [{
-        date: { type: Date, default: Date.now },
-        day: String,
-        exercise: String,
-        note: String
-    }],
     meals: [{
         food_name: String,
         calories: Number,
@@ -74,6 +68,15 @@ const UserSchema = new mongoose.Schema({
         sugar: Number,
         period: String,
         date: { type: Date, default: Date.now }
+    }],
+    workoutLogs: [{
+        date: { type: Date, default: Date.now },
+        day: String,
+        exercise: String,
+        sets: [{
+            reps: { type: Number, required: true },
+            weight: { type: Number, required: true },
+        }]
     }],
     daily_stats: {
         date: String,
@@ -97,6 +100,103 @@ const ExerciseSchema = new mongoose.Schema({
 });
 const User = mongoose.models.User || mongoose.model('User', UserSchema);
 const Exercise = mongoose.models.Exercise || mongoose.model('Exercise', ExerciseSchema);
+
+// Leaderboard Endpoint
+app.get('/leaderboard', async (c) => {
+    try {
+        const exerciseName = c.req.query('exercise');
+        const limit = parseInt(c.req.query('limit')) || 10;
+
+        const pipeline = [
+            // 1. Unwind logs
+            { $unwind: "$workoutLogs" },
+            // 2. Unwind sets
+            { $unwind: "$workoutLogs.sets" }
+        ];
+
+        // 3. Filter by exercise if provided
+        if (exerciseName) {
+            pipeline.push({
+                $match: { "workoutLogs.exercise": exerciseName }
+            });
+        }
+
+        // 4. Group by User and Exercise (find max weight)
+        pipeline.push(
+            {
+                $group: {
+                    _id: {
+                        userId: "$_id",
+                        exercise: "$workoutLogs.exercise"
+                    },
+                    name: { $first: "$fullName" }, // Assuming fullName is the field
+                    avatar: { $first: "$profilePhoto" }, // Assuming profilePhoto field
+                    maxWeight: { $max: "$workoutLogs.sets.weight" },
+                    date: { $first: "$workoutLogs.date" } // Just taking one date
+                }
+            },
+            // 5. Sort by max weight descending
+            { $sort: { maxWeight: -1 } },
+            // 6. Limit (per exercise if grouping, or total list)
+            // If filtering by specific exercise, limit directly.
+            // If fetching global leaderboard across all exercises, we might want top X per exercise.
+            // For now, let's assume filtering -> simple limit.
+            // If no filter -> maybe group by exercise again?
+        );
+
+        if (exerciseName) {
+            pipeline.push(
+                { $limit: limit },
+                {
+                    $project: {
+                        _id: 0,
+                        userId: "$_id.userId",
+                        name: 1,
+                        avatar: 1,
+                        weight: "$maxWeight",
+                        date: 1
+                    }
+                }
+            );
+        } else {
+            // Global Leaderboard: Group by Exercise
+            pipeline.push(
+                {
+                    $group: {
+                        _id: "$_id.exercise",
+                        topAthletes: {
+                            $push: {
+                                userId: "$_id.userId",
+                                name: "$name",
+                                avatar: "$avatar",
+                                weight: "$maxWeight",
+                                date: "$date"
+                            }
+                        }
+                    }
+                },
+                {
+                    // Sort inside the arrays (optional, already sorted by input stream but pushing might lose order?)
+                    // Best to just unwind and sort again or slice first?
+                    // To keep it simple: just return whatever we have, client can filter.
+                    $project: {
+                        exercise: "$_id",
+                        topAthletes: { $slice: ["$topAthletes", limit] }, // Top X per exercise
+                        _id: 0
+                    }
+                }
+            );
+        }
+
+        const leaderboard = await User.aggregate(pipeline);
+        return c.json(leaderboard);
+
+    } catch (error) {
+        console.error("Leaderboard Error:", error);
+        return c.json({ message: "Sıralama verisi alınamadı." }, 500);
+    }
+});
+
 
 // --- HELPER CLIENTS ---
 const getR2Client = (c) => {
@@ -281,7 +381,12 @@ app.post('/analyze-image', async (c) => {
 // Save Log
 app.post('/save-log', async (c) => {
     try {
-        const { email, day, exercise, note } = await c.req.json();
+        const { email, day, exercise, sets } = await c.req.json();
+
+        // Validate sets format
+        if (!Array.isArray(sets)) {
+            return c.json({ message: "Sets must be an array of objects (e.g., [{reps: 10, weight: 20}])." }, 400);
+        }
         const updatedUser = await User.findOneAndUpdate(
             { email: email },
             {
@@ -289,7 +394,7 @@ app.post('/save-log', async (c) => {
                     workoutLogs: {
                         day: day,
                         exercise: exercise,
-                        note: note,
+                        sets: sets, // Expecting array of { reps, weight, rpe }
                         date: new Date()
                     }
                 }
@@ -937,6 +1042,66 @@ app.get('/exercises/:id', async (c) => {
         return c.json(exercise);
     } catch (error) {
         return c.json({ message: "Error fetching exercise", error: error.message }, 500);
+    }
+});
+
+// MIGRATION ENDPOINT
+app.post('/migrate-notes-to-sets', async (c) => {
+    try {
+        const users = await User.find({});
+        let migratedCount = 0;
+
+        for (const user of users) {
+            let userModified = false;
+            if (user.workoutLogs && user.workoutLogs.length > 0) {
+                for (const log of user.workoutLogs) {
+                    // Only migrate if we have a note and sets are empty/non-existent
+                    if (log.note && (!log.sets || log.sets.length === 0)) {
+                        try {
+                            // Expected format: "4 set, 12/12/12/12 tekrar, 20/20/20/20kg"
+                            const parts = log.note.split(',').map(p => p.trim());
+                            if (parts.length >= 3) {
+                                // Extract Reps
+                                const repsPart = parts[1].replace(' tekrar', ''); // "12/12/12/12"
+                                const repsArray = repsPart.split('/').map(Number); // [12, 12, 12, 12]
+
+                                // Extract Weights
+                                const weightPart = parts[2].replace('kg', ''); // "20/20/20/20"
+                                const weightArray = weightPart.split('/').map(Number); // [20, 20, 20, 20]
+
+                                const newSets = [];
+                                for (let i = 0; i < repsArray.length; i++) {
+                                    newSets.push({
+                                        reps: repsArray[i] || 0,
+                                        weight: weightArray[i] || 0,
+                                        rpe: 0 // Default RPE
+                                    });
+                                }
+
+                                if (newSets.length > 0) {
+                                    log.sets = newSets;
+                                    log.note = undefined; // Remove the note
+                                    userModified = true;
+                                }
+                            }
+                        } catch (e) {
+                            console.error(`Error parsing log for user ${user.email}:`, e);
+                            // Continue to next log
+                        }
+                    }
+                }
+            }
+
+            if (userModified) {
+                await user.save();
+                migratedCount++;
+            }
+        }
+
+        return c.json({ message: `Migration complete. Updated ${migratedCount} users.` });
+    } catch (error) {
+        console.error("Migration error:", error);
+        return c.json({ message: "Migration failed", error: error.message }, 500);
     }
 });
 
