@@ -786,6 +786,30 @@ app.get('/get-program/:email', async (c) => {
     }
 });
 
+// Save AI Program
+app.post('/save-program', async (c) => {
+    try {
+        const { email, program } = await c.req.json();
+        if (!email || !program) {
+            return c.json({ message: "Email ve program gereklidir." }, 400);
+        }
+
+        const user = await User.findOne({ email });
+        if (!user) {
+            return c.json({ message: "Kullanıcı bulunamadı." }, 404);
+        }
+
+        user.program = program;
+        user.markModified('program'); // Critical for Mixed type
+        await user.save();
+
+        return c.json({ message: "Program başarıyla kaydedildi.", program: user.program });
+    } catch (error) {
+        console.error("Program kayıt hatası:", error);
+        return c.json({ message: "Program kaydedilirken hata oluştu.", error: error.message }, 500);
+    }
+});
+
 // Add Exercise to Program
 app.post('/program/add-exercise', async (c) => {
     try {
